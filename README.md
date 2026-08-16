@@ -44,25 +44,3 @@ uvicorn app:app --reload
 Start Streamlit:
 
 streamlit run frontend.py
-
-## Project Structure
-
-house-price-prediction/
-│
-├── data/
-│   └── train.csv
-│
-├── notebooks/
-│   └── house_price_prediction.ipynb
-│
-├── models/
-│   ├── preprocessor.pkl
-│   ├── selector.pkl
-│   ├── house_price_model.pkl
-│   └── feature_columns.pkl
-│
-├── app.py
-├── frontend.py
-├── requirements.txt
-├── README.md
-└── .gitignore
