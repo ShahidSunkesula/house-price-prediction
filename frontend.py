@@ -1,25 +1,46 @@
 import streamlit as st
-import requests
+import pandas as pd
+import joblib
 
+
+# ---------------------------------
+# Page Configuration
+# ---------------------------------
 
 st.set_page_config(
     page_title="House Price Predictor",
     page_icon="🏠"
 )
 
+
+# ---------------------------------
+# Load Model Files
+# ---------------------------------
+
+preprocessor = joblib.load("models/preprocessor.pkl")
+selector = joblib.load("models/selector.pkl")
+model = joblib.load("models/house_price_model.pkl")
+feature_columns = joblib.load("models/feature_columns.pkl")
+
+
+# ---------------------------------
+# Title
+# ---------------------------------
+
 st.title("🏠 House Price Predictor")
 st.write("Enter the main details of the house to estimate its price.")
 
 
-# -----------------------------
-# Main House Information
-# -----------------------------
+# ---------------------------------
+# House Information
+# ---------------------------------
 
 st.header("House Information")
 
 col1, col2 = st.columns(2)
 
 with col1:
+
     overall_qual = st.slider(
         "Overall Quality",
         1, 10, 7
@@ -45,7 +66,9 @@ with col1:
         500, 200000, 8000
     )
 
+
 with col2:
+
     bedrooms = st.number_input(
         "Bedrooms",
         0, 15, 3
@@ -83,9 +106,9 @@ with col2:
     )
 
 
-# -----------------------------
+# ---------------------------------
 # Garage
-# -----------------------------
+# ---------------------------------
 
 st.header("Garage")
 
@@ -99,12 +122,14 @@ if garage == "Yes":
     col1, col2 = st.columns(2)
 
     with col1:
+
         garage_cars = st.number_input(
             "Garage Cars",
             1, 5, 2
         )
 
     with col2:
+
         garage_area = st.number_input(
             "Garage Area (sq ft)",
             0, 2000, 500
@@ -125,15 +150,16 @@ else:
     garage_cars = 0
     garage_area = 0
     garage_year = 0
+
     garage_type = "None"
     garage_finish = "None"
     garage_qual = "None"
     garage_cond = "None"
 
 
-# -----------------------------
+# ---------------------------------
 # Basement
-# -----------------------------
+# ---------------------------------
 
 st.header("Basement")
 
@@ -179,9 +205,9 @@ else:
     bsmt_fin_type1 = "None"
 
 
-# -----------------------------
+# ---------------------------------
 # Prediction
-# -----------------------------
+# ---------------------------------
 
 st.divider()
 
@@ -191,11 +217,14 @@ if st.button(
 ):
 
     data = {
+
         "Id": 1,
         "MSSubClass": 60,
         "MSZoning": "RL",
+
         "LotFrontage": 70,
         "LotArea": lot_area,
+
         "Street": "Pave",
         "Alley": "None",
         "LotShape": "Reg",
@@ -203,7 +232,9 @@ if st.button(
         "Utilities": "AllPub",
         "LotConfig": "Inside",
         "LandSlope": "Gtl",
+
         "Neighborhood": neighborhood,
+
         "Condition1": "Norm",
         "Condition2": "Norm",
         "BldgType": "1Fam",
@@ -295,38 +326,115 @@ if st.button(
         "SaleCondition": "Normal"
     }
 
-    try:
 
-        response = requests.post(
-            "http://127.0.0.1:8000/predict",
-            json=data
-        )
+    # ---------------------------------
+    # Convert to DataFrame
+    # ---------------------------------
 
-        if response.status_code == 200:
+    input_data = pd.DataFrame([data])
 
-            result = response.json()
 
-            st.success("Prediction completed!")
+    # ---------------------------------
+    # Feature Engineering
+    # ---------------------------------
 
-            usd_price = result["predicted_price"]
+    input_data["TotalSF"] = (
+        input_data["TotalBsmtSF"]
+        + input_data["1stFlrSF"]
+        + input_data["2ndFlrSF"]
+    )
 
-            # Approximate USD → INR conversion
-            inr_price = usd_price * 90
+    input_data["TotalBathrooms"] = (
+        input_data["FullBath"]
+        + 0.5 * input_data["HalfBath"]
+        + input_data["BsmtFullBath"]
+        + 0.5 * input_data["BsmtHalfBath"]
+    )
 
-            st.metric(
-                "Estimated House Price",
-                f"${usd_price:,.0f}"
-            )
+    input_data["HouseAge"] = (
+        input_data["YrSold"]
+        - input_data["YearBuilt"]
+    )
 
-        else:
+    input_data["RemodAge"] = (
+        input_data["YrSold"]
+        - input_data["YearRemodAdd"]
+    )
 
-            st.error(
-                f"API Error: {response.text}"
-            )
+    input_data["GarageAge"] = (
+        input_data["YrSold"]
+        - input_data["GarageYrBlt"]
+    )
 
-    except requests.exceptions.ConnectionError:
+    input_data.loc[
+        input_data["GarageYrBlt"] == 0,
+        "GarageAge"
+    ] = 0
 
-        st.error(
-            "FastAPI is not running. "
-            "Start it using: uvicorn app:app --reload"
-        )
+    input_data["TotalPorchSF"] = (
+        input_data["WoodDeckSF"]
+        + input_data["OpenPorchSF"]
+        + input_data["EnclosedPorch"]
+        + input_data["3SsnPorch"]
+        + input_data["ScreenPorch"]
+    )
+
+    input_data["TotalFinishedSF"] = (
+        input_data["GrLivArea"]
+        + input_data["BsmtFinSF1"]
+        + input_data["BsmtFinSF2"]
+    )
+
+
+    # ---------------------------------
+    # Feature Order
+    # ---------------------------------
+
+    input_data = input_data[feature_columns]
+
+
+    # ---------------------------------
+    # Preprocessing
+    # ---------------------------------
+
+    processed_data = preprocessor.transform(
+        input_data
+    )
+
+
+    # ---------------------------------
+    # Feature Selection
+    # ---------------------------------
+
+    selected_data = selector.transform(
+        processed_data
+    )
+
+
+    # ---------------------------------
+    # Prediction
+    # ---------------------------------
+
+    prediction = model.predict(
+        selected_data
+    )
+
+    predicted_price = float(
+        prediction[0]
+    )
+
+
+    # ---------------------------------
+    # Display Result
+    # ---------------------------------
+
+    st.success("Prediction completed!")
+
+    st.metric(
+        "Estimated House Price",
+        f"${predicted_price:,.0f}"
+    )
+
+    st.caption(
+        "Prediction is based on the Ames Housing dataset."
+    )
